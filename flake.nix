@@ -23,6 +23,7 @@
             cyu-wifi-connect = pkgs.callPackage ./nix/package.nix { };
             default = cyu-wifi-connect;
           };
+          devShells.default = pkgs.callPackage ./nix/shell.nix { };
         };
     };
 }
