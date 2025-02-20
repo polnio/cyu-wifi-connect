@@ -10,6 +10,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream) {
+  return size * nmemb;
+}
+
 #define CYU_WIFI_ID "cyu-wifi"
 #define CYU_PORTAL_URL "https://portail-wifi-1.u-cergy.fr/auth/plain.html"
 
@@ -95,10 +99,9 @@ void send_request(env_t *env) {
   sprintf(body, "url=&logout=&time=300&authnum=0&uid=%s&pswd=%s", username,
           password);
 
-  printf("body: %s; len: %lu\n", body, strlen(body));
-
   curl_easy_setopt(curl, CURLOPT_URL, CYU_PORTAL_URL);
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
   CURLcode res = curl_easy_perform(curl);
   if (res != CURLE_OK) {
     g_printerr("Failed to send request: %s\n", curl_easy_strerror(res));
