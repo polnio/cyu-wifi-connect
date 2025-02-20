@@ -1,27 +1,26 @@
 #include <NetworkManager.h>
+#include <curl/curl.h>
 #include <gio/gio.h>
 #include <glib-object.h>
 #include <glib.h>
 #include <nm-core-enum-types.h>
 #include <nm-dbus-interface.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-const char *CYU_WIFI_ID = "cyu-wifi";
+#define CYU_WIFI_ID "cyu-wifi"
+#define CYU_PORTAL_URL "https://portail-wifi-1.u-cergy.fr/auth/plain.html"
 
-int main() {
+bool is_connection_needed() {
   GError *error = NULL;
   NMClient *client = nm_client_new(NULL, &error);
   if (client == NULL) {
     g_printerr("Failed to create client: %s\n", error->message);
     g_error_free(error);
-    goto cleanup_without_client;
-    return EXIT_FAILURE;
+    exit(EXIT_FAILURE);
   }
-
-  NMState nm_state = nm_client_get_state(client);
-  printf("NetworkManager state: %u\n", nm_state);
 
   const GPtrArray *devices = nm_client_get_all_devices(client);
 
@@ -36,32 +35,81 @@ int main() {
   }
   if (device == NULL) {
     g_printerr("No wifi device found\n");
-    goto cleanup;
-    return EXIT_FAILURE;
+    exit(EXIT_FAILURE);
   }
 
   /// No need to free device
   NMActiveConnection *connection = nm_device_get_active_connection(device);
   if (connection == NULL) {
-    g_printerr("No active connection\n");
-    goto cleanup;
-    return EXIT_FAILURE;
+    g_print("No active connection\n");
+    return false;
   }
   const char *id = nm_active_connection_get_id(connection);
-  NMDeviceState state = nm_device_get_state(device);
-  NMConnectivityState connectivity =
-      nm_device_get_connectivity(device, AF_INET);
-  printf("Connected to \"%s\" with state %u and connectivity %u\n", id, state,
-         connectivity);
 
   if (strcmp(id, CYU_WIFI_ID) != 0) {
-    g_printerr("Not connected to %s\n", CYU_WIFI_ID);
-    goto cleanup;
-    return EXIT_FAILURE;
+    g_print("Not connected to " CYU_WIFI_ID "\n");
+    return false;
   }
 
-cleanup:
-  g_object_unref(client);
-cleanup_without_client:
+  NMConnectivityState connectivity =
+      nm_device_get_connectivity(device, AF_INET);
+  if (connectivity != NM_CONNECTIVITY_PORTAL) {
+    g_print("No need to connect to portal\n");
+    return false;
+  }
+  return true;
+}
+
+struct env {
+  const char *username;
+  const char *password;
+};
+typedef struct env env_t;
+
+env_t load_env() {
+  const char *username = g_getenv("CYU_WIFI_USERNAME");
+  if (username == NULL) {
+    g_printerr("No username found\n");
+    exit(EXIT_FAILURE);
+  }
+  const char *password = g_getenv("CYU_WIFI_PASSWORD");
+  if (password == NULL) {
+    g_printerr("No password found\n");
+    exit(EXIT_FAILURE);
+  }
+  env_t env = {username, password};
+  return env;
+}
+
+void send_request(env_t *env) {
+  CURL *curl = curl_easy_init();
+  if (!curl) {
+    g_printerr("Failed to init curl\n");
+    exit(EXIT_FAILURE);
+  }
+
+  char *body = malloc(43 + strlen(env->username) + strlen(env->password));
+  sprintf(body, "url=&logout=&time=300&authnum=0&uid=%s&pswd=%s", env->username,
+          env->password);
+
+  curl_easy_setopt(curl, CURLOPT_URL, CYU_PORTAL_URL);
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+  CURLcode res = curl_easy_perform(curl);
+  if (res != CURLE_OK) {
+    g_printerr("Failed to send request: %s\n", curl_easy_strerror(res));
+    exit(EXIT_FAILURE);
+  }
+
+  free(body);
+  curl_easy_cleanup(curl);
+}
+
+int main() {
+  env_t env = load_env();
+  if (!is_connection_needed()) {
+    g_print("No need to connect to portal\n");
+    return EXIT_SUCCESS;
+  }
+
   return EXIT_SUCCESS;
 }

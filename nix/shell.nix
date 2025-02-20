@@ -1,28 +1,22 @@
 {
   # libraries
-  lib,
+  callPackage,
   mkShell,
-  pkg-config,
   valgrind,
-
-  # packages
-  glib,
-  networkmanager,
 }:
 let
-  inherit (lib) makeIncludePath;
+  package = callPackage ./package.nix { };
 in
-mkShell rec {
+mkShell ({
   nativeBuildInputs = [
-    pkg-config
     valgrind
   ];
-  buildInputs = [
-    glib
-    networkmanager
-  ];
+  inputsFrom = [ package ];
   # C_INCLUDE_PATH = makeIncludePath buildInputs;
   shellHook = ''
     export C_INCLUDE_PATH=$(pkg-config --cflags-only-I libnm | sed 's/-I//g' | tr ' ' :)
+    if [ -f .env ]; then
+      export $(cat .env | xargs)
+    fi
   '';
-}
+})

@@ -1,8 +1,12 @@
 {
+  # Libraries
   stdenv,
   pkg-config,
+
+  # Dependencies
   networkmanager,
   glib,
+  curl,
 }:
 stdenv.mkDerivation {
   pname = "cyu-wifi-connect";
@@ -12,10 +16,11 @@ stdenv.mkDerivation {
   buildInputs = [
     glib
     networkmanager
+    curl
   ];
   buildPhase = ''
     echo $PKG_CONFIG_PATH
-    $CC src/main.c -o cyu-wifi-connect $(pkg-config --cflags --libs libnm)
+    $CC src/main.c -o cyu-wifi-connect $(pkg-config --cflags --libs libnm libcurl)
   '';
   installPhase = ''
     mkdir -p $out/bin
