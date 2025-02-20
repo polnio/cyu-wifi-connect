@@ -17,15 +17,7 @@ size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream) {
 #define CYU_WIFI_ID "cyu-wifi"
 #define CYU_PORTAL_URL "https://portail-wifi-1.u-cergy.fr/auth/plain.html"
 
-bool is_connection_needed() {
-  GError *error = NULL;
-  NMClient *client = nm_client_new(NULL, &error);
-  if (client == NULL) {
-    g_printerr("Failed to create client: %s\n", error->message);
-    g_error_free(error);
-    exit(EXIT_FAILURE);
-  }
-
+bool is_connection_needed(NMClient *client) {
   const GPtrArray *devices = nm_client_get_all_devices(client);
 
   /// No need to free devices
@@ -56,7 +48,7 @@ bool is_connection_needed() {
   }
 
   NMConnectivityState connectivity =
-      nm_device_get_connectivity(device, AF_INET);
+      nm_client_check_connectivity(client, NULL, NULL);
   if (connectivity != NM_CONNECTIVITY_PORTAL) {
     g_print("No need to connect to portal\n");
     return false;
@@ -114,14 +106,28 @@ void send_request(env_t *env) {
   curl_easy_cleanup(curl);
 }
 
+NMClient *create_client() {
+  GError *error = NULL;
+  NMClient *client = nm_client_new(NULL, &error);
+  if (client == NULL) {
+    g_printerr("Failed to create client: %s\n", error->message);
+    g_error_free(error);
+    exit(EXIT_FAILURE);
+  }
+  return client;
+}
+
 int main() {
   curl_global_init(CURL_GLOBAL_SSL);
   env_t env = load_env();
-  if (!is_connection_needed()) {
+  NMClient *client = create_client();
+  if (!is_connection_needed(client)) {
     g_print("No need to connect to portal\n");
     return EXIT_SUCCESS;
   }
   send_request(&env);
+
+  nm_client_check_connectivity(client, NULL, NULL);
 
   g_print("Connected to " CYU_WIFI_ID "\n");
 
