@@ -88,9 +88,14 @@ void send_request(env_t *env) {
     exit(EXIT_FAILURE);
   }
 
-  char *body = malloc(43 + strlen(env->username) + strlen(env->password));
-  sprintf(body, "url=&logout=&time=300&authnum=0&uid=%s&pswd=%s", env->username,
-          env->password);
+  char *username = curl_easy_escape(curl, env->username, strlen(env->username));
+  char *password = curl_easy_escape(curl, env->password, strlen(env->password));
+
+  char *body = malloc(43 + strlen(username) + strlen(password));
+  sprintf(body, "url=&logout=&time=300&authnum=0&uid=%s&pswd=%s", username,
+          password);
+
+  printf("body: %s; len: %lu\n", body, strlen(body));
 
   curl_easy_setopt(curl, CURLOPT_URL, CYU_PORTAL_URL);
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
@@ -101,15 +106,22 @@ void send_request(env_t *env) {
   }
 
   free(body);
+  curl_free(username);
+  curl_free(password);
   curl_easy_cleanup(curl);
 }
 
 int main() {
+  curl_global_init(CURL_GLOBAL_SSL);
   env_t env = load_env();
   if (!is_connection_needed()) {
     g_print("No need to connect to portal\n");
     return EXIT_SUCCESS;
   }
+  send_request(&env);
 
+  g_print("Connected to " CYU_WIFI_ID "\n");
+
+  curl_global_cleanup();
   return EXIT_SUCCESS;
 }
