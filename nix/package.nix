@@ -22,7 +22,7 @@ stdenv.mkDerivation {
   ];
   buildPhase = ''
     echo $PKG_CONFIG_PATH
-    $CC src/main.c -o cyu-wifi-connect $(pkg-config --cflags --libs libnm libcurl libsecret-1)
+    $CC src/*.c -o cyu-wifi-connect $(pkg-config --cflags --libs libnm libcurl libsecret-1)
   '';
   installPhase = ''
     mkdir -p $out/bin

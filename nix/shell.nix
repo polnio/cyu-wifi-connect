@@ -15,8 +15,6 @@ mkShell ({
   # C_INCLUDE_PATH = makeIncludePath buildInputs;
   shellHook = ''
     export C_INCLUDE_PATH=$(pkg-config --cflags-only-I libnm libcurl libsecret-1 | sed 's/-I//g' | tr ' ' :)
-    if [ -f .env ]; then
-      export $(cat .env | xargs)
-    fi
+    export CPLUS_INCLUDE_PATH=$C_INCLUDE_PATH
   '';
 })
