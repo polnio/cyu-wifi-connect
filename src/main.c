@@ -1,14 +1,29 @@
+#include "unistd.h"
 #include <NetworkManager.h>
 #include <curl/curl.h>
 #include <gio/gio.h>
 #include <glib-object.h>
 #include <glib.h>
-#include <nm-core-enum-types.h>
-#include <nm-dbus-interface.h>
+#include <libsecret/secret.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <termios.h>
+
+int get_pass(char *password) {
+  struct termios term;
+  tcgetattr(STDIN_FILENO, &term);
+  term.c_lflag &= ~ECHO;
+  tcsetattr(STDIN_FILENO, TCSANOW, &term);
+
+  int r = scanf("%s", password);
+
+  term.c_lflag |= ECHO;
+  tcsetattr(STDIN_FILENO, TCSANOW, &term);
+
+  return r;
+}
 
 size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream) {
   return size * nmemb;
@@ -62,21 +77,6 @@ struct env {
 };
 typedef struct env env_t;
 
-env_t load_env() {
-  const char *username = g_getenv("CYU_WIFI_USERNAME");
-  if (username == NULL) {
-    g_printerr("No username found\n");
-    exit(EXIT_FAILURE);
-  }
-  const char *password = g_getenv("CYU_WIFI_PASSWORD");
-  if (password == NULL) {
-    g_printerr("No password found\n");
-    exit(EXIT_FAILURE);
-  }
-  env_t env = {username, password};
-  return env;
-}
-
 void send_request(env_t *env) {
   CURL *curl = curl_easy_init();
   if (!curl) {
@@ -106,6 +106,20 @@ void send_request(env_t *env) {
   curl_easy_cleanup(curl);
 }
 
+enum TYPE { USERNAME, PASSWORD };
+
+const SecretSchema *get_schema() {
+  static const SecretSchema schema = {
+      "dev.poco.cyu-wifi-connect",
+      SECRET_SCHEMA_NONE,
+      {
+          {"type", SECRET_SCHEMA_ATTRIBUTE_INTEGER},
+      }};
+
+  return &schema;
+}
+#define SCHEMA get_schema()
+
 NMClient *create_client() {
   GError *error = NULL;
   NMClient *client = nm_client_new(NULL, &error);
@@ -117,9 +131,57 @@ NMClient *create_client() {
   return client;
 }
 
+const char *load_secret_part(enum TYPE type) {
+  GError *error = NULL;
+  const char *value =
+      secret_password_lookup_sync(SCHEMA, NULL, &error, "type", type, NULL);
+  if (error != NULL) {
+    g_printerr("Failed to load secret: %s\n", error->message);
+    g_error_free(error);
+    exit(EXIT_FAILURE);
+  }
+  return value;
+}
+
+void store_secret_part(enum TYPE type, const char *value) {
+  GError *error = NULL;
+  secret_password_store_sync(SCHEMA, SECRET_COLLECTION_DEFAULT, "value", value,
+                             NULL, &error, "type", type, NULL);
+  if (error != NULL) {
+    g_printerr("Failed to store secret: %s\n", error->message);
+    g_error_free(error);
+    exit(EXIT_FAILURE);
+  }
+}
+
+env_t load_secret() {
+  const char *username = load_secret_part(USERNAME);
+  const char *password = load_secret_part(PASSWORD);
+  return (env_t){username, password};
+}
+
+void store_secret(env_t env) {
+  store_secret_part(USERNAME, env.username);
+  store_secret_part(PASSWORD, env.password);
+}
+
+env_t ask_secret() {
+  char username[256];
+  char password[256];
+  printf("Username: ");
+  scanf("%s", username);
+  printf("Password: ");
+  get_pass(password);
+  return (env_t){username, password};
+}
+
 int main() {
   curl_global_init(CURL_GLOBAL_SSL);
-  env_t env = load_env();
+  env_t env = load_secret();
+  if (env.username == NULL || env.password == NULL) {
+    env = ask_secret();
+    store_secret(env);
+  }
   NMClient *client = create_client();
   if (!is_connection_needed(client)) {
     g_print("No need to connect to portal\n");
